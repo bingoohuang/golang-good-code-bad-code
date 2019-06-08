@@ -1,9 +1,4 @@
-/*
-Package good is a library for parsing the ADEXP messages.
-An intermediate format Message is built by the parser.
-*/
-
-package good
+package v6
 
 import (
 	log "github.com/sirupsen/logrus"

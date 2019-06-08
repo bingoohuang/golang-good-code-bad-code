@@ -1,11 +1,9 @@
-package good
+package v6
 
 import (
 	"bytes"
 	"fmt"
 	"strconv"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Parse a line by returning the header (token name) and the value.
@@ -29,7 +27,6 @@ func extractFlightLevel(in string) (int, error) {
 	fl, err := strconv.Atoi(in[1:])
 
 	if err != nil {
-		log.Errorf("flight level %v cannot be parsed", fl)
 		return -1, fmt.Errorf("flight level %v cannot be parsed", fl)
 	}
 

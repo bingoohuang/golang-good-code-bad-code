@@ -1,4 +1,4 @@
-package good
+package v6
 
 import (
 	"bytes"
