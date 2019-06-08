@@ -1,4 +1,4 @@
-package v6
+package v7
 
 import (
 	"fmt"
@@ -11,11 +11,17 @@ import (
 )
 
 // Test the parsing of a simple ADEXP message
-func TestParseAdexpMessage(t *testing.T) {
-	bytes, _ := ioutil.ReadFile("../resources/tests/adexp.txt")
+func TestParse(t *testing.T) {
+	b, err := ioutil.ReadFile("../resources/tests/adexp.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	m, err := ParseAdexpMessage(bytes)
-	assert.Nil(t, err)
+	lexemes := lex(b)
+	m, err := parse(lexemes)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Test upper level
 	assert.Equal(t, true, m.IsUpperLevel())
@@ -54,56 +60,30 @@ func TestParseAdexpMessage(t *testing.T) {
 	assert.Equal(t, "LSZH", m.RoutePoints[4].Ptid)
 	assert.Equal(t, 14, m.RoutePoints[4].FlightLevel)
 	assert.Equal(t, "170302052710", m.RoutePoints[4].Eto)
+
+	assert.Equal(t, "(ACH-BEL20B-LIML1050-EBBR-DOF/150521-14/HOC/1120F320 -18/PBN/B1 DOF/150521 REG/OODWK RVR/150 OPR/BEL ORGN/LSAZZQZG SRC/AFP RMK/AGCS EQUIPPED)", m.MessageText)
+	assert.Equal(t, "???FPD.F15: N0410F300 ARLES UL153 PUNSA/N0410F300 UL153 VADEM/N0400F320 UN853 PENDU/N0400F330 UN853 IXILU/N0400F340 UN853 DIK/N0400F320 UY37 BATTY", m.Comment)
+
 }
 
-func TestFindSubfields(t *testing.T) {
-	line := []byte("-ESTDATA -PTID XETBO -ETO 170302032300 -FL F390")
-	subfields := findSubfields(line)
-	assert.Equal(t, len(subfields), 4)
-	assert.Equal(t, string(subfields[0]), "ESTDATA ")
-	assert.Equal(t, string(subfields[1]), "PTID XETBO ")
-	assert.Equal(t, string(subfields[2]), "ETO 170302032300 ")
-	assert.Equal(t, string(subfields[3]), "FL F390")
+// parseAdexpMessage == lex the bytes into lexemes + parse the lexemes
+func parseAdexpMessage(raw []byte) (*Message, error) {
+	lexemes := lex(raw)
+	return parse(lexemes)
 }
 
-func TestParseLine(t *testing.T) {
-	line := []byte("-ESTDATA -PTID XETBO -ETO 170302032300 -FL F390")
-	subfields := findSubfields(line)
+func BenchmarkParser(b *testing.B) {
+	raw, err := ioutil.ReadFile("../resources/tests/adexp.txt")
+	if err != nil {
+		b.Fatal(err)
+	}
 
-	h, l := parseLine(subfields[0])
-	assert.Equal(t, string(h), "ESTDATA")
-	assert.Equal(t, string(l), "")
-
-	h, l = parseLine(subfields[1])
-	assert.Equal(t, string(h), "PTID")
-	assert.Equal(t, string(l), "XETBO ")
-
-	h, l = parseLine(subfields[2])
-	assert.Equal(t, string(h), "ETO")
-	assert.Equal(t, string(l), "170302032300 ")
-
-	h, l = parseLine(subfields[3])
-	assert.Equal(t, string(h), "FL")
-	assert.Equal(t, string(l), "F390")
-}
-
-// Test ...
-func TestParseSimpleToken(t *testing.T) {
-	// Do something
-}
-
-// Test ...
-func TestParseComplexToken(t *testing.T) {
-	// Do something
-}
-
-// Performance test of an ADEXP message parsing
-func BenchmarkParseAdexpMessage(t *testing.B) {
-	log.SetLevel(log.FatalLevel)
-	bytes, _ := ioutil.ReadFile("../resources/tests/adexp.txt")
-
-	for i := 0; i < t.N; i++ {
-		ParseAdexpMessage(bytes)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err = parseAdexpMessage(raw)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -125,12 +105,33 @@ func BenchmarkParseBatch(b *testing.B) {
 	}
 }
 
-func parseMessages(inputs [][]byte) []Message {
+func parseMessages(inputs [][]byte) []*Message {
 	C := len(inputs)
-	messages := make([]Message, C)
+	messages := make([]*Message, C)
+
+	// Sequential
+	//
+	// for j := range inputs {
+	// 	messages[j], _ = parseAdexpMessage(inputs[j])
+	// }
+
+	// Concurrent
+	//
+	// var wg sync.WaitGroup
+	// wg.Add(C)
+	// for j := range inputs {
+	// 	j := j
+	// 	input := inputs[j]
+	// 	go func() {
+	// 		messages[j], _ = parseAdexpMessage(input)
+	// 		wg.Done()
+	// 	}()
+	// }
+	// wg.Wait()
 
 	// Concurrent batches: W workers of M messages
-	const W = 100
+	//
+	const W = 20
 	if C%W != 0 {
 		panic(fmt.Sprintf("Can't uniformely dispatch %d to %d workers", C, W))
 	}
@@ -143,7 +144,7 @@ func parseMessages(inputs [][]byte) []Message {
 		submsg := messages[hi:lo]
 		go func() {
 			for j, input := range subinputs {
-				submsg[j], _ = ParseAdexpMessage(input)
+				submsg[j], _ = parseAdexpMessage(input)
 			}
 			wg.Done()
 		}()
